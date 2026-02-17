@@ -51,6 +51,13 @@ EquityProtection g_equity;
 Dashboard g_dashboard;
 datetime g_last_trade_time=0;
 
+string TrimText(string value)
+  {
+   StringTrimLeft(value);
+   StringTrimRight(value);
+   return(value);
+  }
+
 int OnInit()
   {
    int count=StringSplit(InpSymbols,',',g_symbols);
@@ -60,7 +67,7 @@ int OnInit()
    ArrayResize(g_signal,count);
    for(int i=0;i<count;i++)
      {
-      string s=StringTrim(g_symbols[i]);
+      string s=TrimText(g_symbols[i]);
       g_symbols[i]=s;
       SymbolSelect(s,true);
       if(!g_signal[i].Init(s,InpAlligatorJaw,InpAlligatorTeeth,InpAlligatorLips,InpEMAPeriod,InpATRPeriod,InpWPRPeriod,InpATRVolatilityMultiplier,InpDormancyATRFactor))
@@ -118,9 +125,13 @@ void OnTick()
       if(!signal.valid)
          continue;
 
-      double entry=(signal.direction==DIR_BUY)?SymbolInfoDouble(symbol,SYMBOL_ASK):SymbolInfoDouble(symbol,SYMBOL_BID);
-      double sl_points=MathAbs(entry-signal.stop_loss)/SymbolInfoDouble(symbol,SYMBOL_POINT);
+      double entry_raw=(signal.direction==DIR_BUY)?SymbolInfoDouble(symbol,SYMBOL_ASK):SymbolInfoDouble(symbol,SYMBOL_BID);
+      double entry=NormalizeDouble(entry_raw,2);
+      signal.stop_loss=NormalizeDouble(signal.stop_loss,2);
+      signal.take_profit=NormalizeDouble(signal.take_profit,2);
+      double sl_points=NormalizeDouble(MathAbs(entry-signal.stop_loss)/SymbolInfoDouble(symbol,SYMBOL_POINT),2);
       double lots=g_risk.ComputeLots(symbol,eff_risk,sl_points);
+      lots=NormalizeDouble(lots,2);
       if(lots<=0.0)
          continue;
 
