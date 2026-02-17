@@ -20,6 +20,15 @@ private:
    double m_atr_volatility_multiplier;
    double m_dormancy_atr_factor;
 
+   bool IsUsableLevel(const double value)
+     {
+      if(!MathIsValidNumber(value))
+         return(false);
+      if(value<=0.0 || value==EMPTY_VALUE)
+         return(false);
+      return(true);
+     }
+
 public:
    bool Init(const string symbol,
              const int jaw_period,const int teeth_period,const int lips_period,
@@ -109,16 +118,28 @@ public:
       double last_up=0,last_dn=0;
       for(int i=0;i<200;i++)
         {
-         if(last_up==0 && fract_up[i]!=0.0) last_up=fract_up[i];
-         if(last_dn==0 && fract_dn[i]!=0.0) last_dn=fract_dn[i];
+         if(last_up==0 && IsUsableLevel(fract_up[i])) last_up=fract_up[i];
+         if(last_dn==0 && IsUsableLevel(fract_dn[i])) last_dn=fract_dn[i];
          if(last_up>0 && last_dn>0) break;
         }
 
       double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
       double current=r_m30[0].close;
+      if(point<=0.0 || !MathIsValidNumber(current) || current<=0.0)
+        {
+         sig.reason="Invalid market data";
+         sig.direction=DIR_NONE;
+         return(sig);
+        }
+
       if(use_fractal_filter)
         {
-         bool breakout=(sig.direction==DIR_BUY && current>last_up) || (sig.direction==DIR_SELL && current<last_dn);
+         bool breakout=false;
+         if(sig.direction==DIR_BUY)
+            breakout=(last_up>0.0 && current>last_up);
+         else
+            breakout=(last_dn>0.0 && current<last_dn);
+
          if(!breakout)
            {
             sig.reason="No fractal breakout";
@@ -133,9 +154,53 @@ public:
            }
       }
 
-      double sl=(sig.direction==DIR_BUY)?(last_dn>0?last_dn:(current-atr[0]*atr_sl_mult)):(last_up>0?last_up:(current+atr[0]*atr_sl_mult));
-      double risk=MathAbs(current-sl);
-      double tp=(sig.direction==DIR_BUY)?current+risk*rr_ratio:current-risk*rr_ratio;
+      double bid=SymbolInfoDouble(symbol,SYMBOL_BID);
+      double ask=SymbolInfoDouble(symbol,SYMBOL_ASK);
+      double entry=current;
+      if(sig.direction==DIR_BUY && ask>0.0 && MathIsValidNumber(ask))
+         entry=ask;
+      if(sig.direction==DIR_SELL && bid>0.0 && MathIsValidNumber(bid))
+         entry=bid;
+
+      double sl=0.0;
+      if(sig.direction==DIR_BUY)
+        {
+         if(last_dn>0.0 && last_dn<entry-point)
+            sl=last_dn;
+         else
+            sl=entry-atr[0]*atr_sl_mult;
+        }
+      else
+        {
+         if(last_up>0.0 && last_up>entry+point)
+            sl=last_up;
+         else
+            sl=entry+atr[0]*atr_sl_mult;
+        }
+
+      double risk=MathAbs(entry-sl);
+      if(!MathIsValidNumber(sl) || sl<=0.0 || !MathIsValidNumber(risk) || risk<=point)
+        {
+         sig.reason="Invalid SL distance";
+         sig.direction=DIR_NONE;
+         return(sig);
+        }
+
+      double tp=(sig.direction==DIR_BUY)?entry+risk*rr_ratio:entry-risk*rr_ratio;
+      if(!MathIsValidNumber(tp) || tp<=0.0)
+        {
+         sig.reason="Invalid TP level";
+         sig.direction=DIR_NONE;
+         return(sig);
+        }
+
+      if((sig.direction==DIR_BUY && (sl>=entry || tp<=entry)) ||
+         (sig.direction==DIR_SELL && (sl<=entry || tp>=entry)))
+        {
+         sig.reason="SL/TP side invalid";
+         sig.direction=DIR_NONE;
+         return(sig);
+        }
 
       sig.stop_loss=sl;
       sig.take_profit=tp;
