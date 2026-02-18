@@ -19,6 +19,12 @@ private:
    int m_wpr_period;
    double m_atr_volatility_multiplier;
    double m_dormancy_atr_factor;
+   double m_wpr_buy_from;
+   double m_wpr_buy_to;
+   double m_wpr_sell_from;
+   double m_wpr_sell_to;
+   bool   m_require_ema_slope;
+   double m_min_alligator_spread_points;
 
    bool IsUsableLevel(const double value)
      {
@@ -33,7 +39,10 @@ public:
    bool Init(const string symbol,
              const int jaw_period,const int teeth_period,const int lips_period,
              const int ema_period,const int atr_period,const int wpr_period,
-             const double atr_vol_multiplier,const double dormancy_atr_factor)
+             const double atr_vol_multiplier,const double dormancy_atr_factor,
+             const double wpr_buy_from,const double wpr_buy_to,
+             const double wpr_sell_from,const double wpr_sell_to,
+             const bool require_ema_slope,const double min_alligator_spread_points)
      {
       m_jaw_period=jaw_period;
       m_teeth_period=teeth_period;
@@ -43,6 +52,12 @@ public:
       m_wpr_period=wpr_period;
       m_atr_volatility_multiplier=atr_vol_multiplier;
       m_dormancy_atr_factor=dormancy_atr_factor;
+      m_wpr_buy_from=wpr_buy_from;
+      m_wpr_buy_to=wpr_buy_to;
+      m_wpr_sell_from=wpr_sell_from;
+      m_wpr_sell_to=wpr_sell_to;
+      m_require_ema_slope=require_ema_slope;
+      m_min_alligator_spread_points=min_alligator_spread_points;
 
       m_alligator=iAlligator(symbol,PERIOD_H1,m_jaw_period,8,m_teeth_period,5,m_lips_period,3,MODE_SMMA,PRICE_MEDIAN);
       m_ema=iMA(symbol,PERIOD_H1,m_ema_period,0,MODE_EMA,PRICE_CLOSE);
@@ -93,8 +108,8 @@ public:
       bool volatility_ok=(atr[0]>(atr_avg*m_atr_volatility_multiplier));
       bool dormant=(MathAbs(lips[0]-teeth[0])<atr[0]*m_dormancy_atr_factor && MathAbs(teeth[0]-jaw[0])<atr[0]*m_dormancy_atr_factor);
 
-      bool wpr_buy=(wpr[1]<-85.0 && wpr[0]>-80.0);
-      bool wpr_sell=(wpr[1]>-15.0 && wpr[0]<-20.0);
+      bool wpr_buy=(wpr[1]<m_wpr_buy_from && wpr[0]>m_wpr_buy_to);
+      bool wpr_sell=(wpr[1]>m_wpr_sell_from && wpr[0]<m_wpr_sell_to);
 
       if(!volatility_ok || dormant)
         {
@@ -130,6 +145,30 @@ public:
          sig.reason="Invalid market data";
          sig.direction=DIR_NONE;
          return(sig);
+        }
+
+      if(m_require_ema_slope)
+        {
+         bool ema_up=(ema[0]>ema[1]);
+         bool ema_down=(ema[0]<ema[1]);
+         if((sig.direction==DIR_BUY && !ema_up) || (sig.direction==DIR_SELL && !ema_down))
+           {
+            sig.reason="EMA slope filter";
+            sig.direction=DIR_NONE;
+            return(sig);
+           }
+        }
+
+      if(m_min_alligator_spread_points>0.0)
+        {
+         double spread_lt=MathAbs(lips[0]-teeth[0])/point;
+         double spread_tj=MathAbs(teeth[0]-jaw[0])/point;
+         if(spread_lt<m_min_alligator_spread_points || spread_tj<m_min_alligator_spread_points)
+           {
+            sig.reason="Alligator spread too small";
+            sig.direction=DIR_NONE;
+            return(sig);
+           }
         }
 
       if(use_fractal_filter)

@@ -23,6 +23,14 @@ input int InpEMAPeriod=200;
 input int InpATRPeriod=14;
 input double InpATRVolatilityMultiplier=1.0;
 input double InpDormancyATRFactor=0.20;
+input bool InpRequireEMASlope=true;
+input double InpMinAlligatorSpreadPoints=60;
+
+input group "WPR Thresholds"
+input double InpWPRBuyFrom=-85.0;
+input double InpWPRBuyTo=-80.0;
+input double InpWPRSellFrom=-15.0;
+input double InpWPRSellTo=-20.0;
 
 input group "Entry (M30)"
 input int InpWPRPeriod=14;
@@ -98,7 +106,7 @@ BlockReason DetectBlockReason(const string reason)
       return(BLOCK_FRACTAL);
    if(StringFind(reason,"WPR",0)>=0)
       return(BLOCK_WPR);
-   if(StringFind(reason,"align",0)>=0)
+   if(StringFind(reason,"align",0)>=0 || StringFind(reason,"EMA slope",0)>=0 || StringFind(reason,"Alligator spread",0)>=0)
       return(BLOCK_ALIGNMENT);
    if(StringFind(reason,"margin",0)>=0)
       return(BLOCK_MARGIN);
@@ -172,7 +180,7 @@ int OnInit()
       string s=TrimText(g_symbols[i]);
       g_symbols[i]=s;
       SymbolSelect(s,true);
-      if(!g_signal[i].Init(s,InpAlligatorJaw,InpAlligatorTeeth,InpAlligatorLips,InpEMAPeriod,InpATRPeriod,InpWPRPeriod,InpATRVolatilityMultiplier,InpDormancyATRFactor))
+      if(!g_signal[i].Init(s,InpAlligatorJaw,InpAlligatorTeeth,InpAlligatorLips,InpEMAPeriod,InpATRPeriod,InpWPRPeriod,InpATRVolatilityMultiplier,InpDormancyATRFactor,InpWPRBuyFrom,InpWPRBuyTo,InpWPRSellFrom,InpWPRSellTo,InpRequireEMASlope,InpMinAlligatorSpreadPoints))
          return(INIT_FAILED);
      }
 
