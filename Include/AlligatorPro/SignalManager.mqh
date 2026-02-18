@@ -249,6 +249,22 @@ public:
       return(true);
      }
 
+
+   int GetAlligatorHandle() const
+     {
+      return(m_alligator);
+     }
+
+   int GetWPRHandle() const
+     {
+      return(m_wpr);
+     }
+
+   int GetATRHandle() const
+     {
+      return(m_atr);
+     }
+
    void Release()
      {
       if(m_alligator!=INVALID_HANDLE) IndicatorRelease(m_alligator);

@@ -1,13 +1,14 @@
 #pragma once
 #include "SignalManager.mqh"
-#include "Logger.mqh"
 
 class CExitEngine
   {
 private:
-   string       *m_symbols;
-   SignalManager *m_signals;
-   int           m_count;
+   string m_symbols[];
+   int    m_alligator_handles[];
+   int    m_wpr_handles[];
+   int    m_atr_handles[];
+   int    m_count;
 
    bool m_use_contraction;
    bool m_use_alignment;
@@ -26,6 +27,69 @@ private:
       return(-1);
      }
 
+   bool ReadAlligator(const int idx,
+                      double &jaw_current,double &jaw_previous,
+                      double &teeth_current,double &teeth_previous,
+                      double &lips_current,double &lips_previous) const
+     {
+      if(idx<0 || idx>=m_count)
+         return(false);
+
+      int handle=m_alligator_handles[idx];
+      if(handle==INVALID_HANDLE)
+         return(false);
+
+      double jaw[2],teeth[2],lips[2];
+      if(CopyBuffer(handle,0,1,2,jaw)<2 ||
+         CopyBuffer(handle,1,1,2,teeth)<2 ||
+         CopyBuffer(handle,2,1,2,lips)<2)
+         return(false);
+
+      jaw_current=jaw[0];
+      jaw_previous=jaw[1];
+      teeth_current=teeth[0];
+      teeth_previous=teeth[1];
+      lips_current=lips[0];
+      lips_previous=lips[1];
+      return(true);
+     }
+
+   bool ReadWPR(const int idx,double &wpr_current,double &wpr_previous) const
+     {
+      if(idx<0 || idx>=m_count)
+         return(false);
+
+      int handle=m_wpr_handles[idx];
+      if(handle==INVALID_HANDLE)
+         return(false);
+
+      double wpr[2];
+      if(CopyBuffer(handle,0,1,2,wpr)<2)
+         return(false);
+
+      wpr_current=wpr[0];
+      wpr_previous=wpr[1];
+      return(true);
+     }
+
+   bool ReadATR(const int idx,double &atr_current,double &atr_previous) const
+     {
+      if(idx<0 || idx>=m_count)
+         return(false);
+
+      int handle=m_atr_handles[idx];
+      if(handle==INVALID_HANDLE)
+         return(false);
+
+      double atr[2];
+      if(CopyBuffer(handle,0,1,2,atr)<2)
+         return(false);
+
+      atr_current=atr[0];
+      atr_previous=atr[1];
+      return(true);
+     }
+
    // Alligator contraction: both lips-teeth and teeth-jaw distances shrink vs previous bar.
    bool IsAlligatorContraction(const string symbol)
      {
@@ -34,7 +98,7 @@ private:
          return(false);
 
       double jaw_now=0,jaw_prev=0,teeth_now=0,teeth_prev=0,lips_now=0,lips_prev=0;
-      if(!m_signals[idx].ReadAlligator(jaw_now,jaw_prev,teeth_now,teeth_prev,lips_now,lips_prev))
+      if(!ReadAlligator(idx,jaw_now,jaw_prev,teeth_now,teeth_prev,lips_now,lips_prev))
          return(false);
 
       double dist_lt_now=MathAbs(lips_now-teeth_now);
@@ -53,7 +117,7 @@ private:
          return(false);
 
       double jaw_now=0,jaw_prev=0,teeth_now=0,teeth_prev=0,lips_now=0,lips_prev=0;
-      if(!m_signals[idx].ReadAlligator(jaw_now,jaw_prev,teeth_now,teeth_prev,lips_now,lips_prev))
+      if(!ReadAlligator(idx,jaw_now,jaw_prev,teeth_now,teeth_prev,lips_now,lips_prev))
          return(false);
 
       if(is_long)
@@ -69,7 +133,7 @@ private:
          return(false);
 
       double wpr_now=0,wpr_prev=0;
-      if(!m_signals[idx].ReadWPR(wpr_now,wpr_prev))
+      if(!ReadWPR(idx,wpr_now,wpr_prev))
          return(false);
 
       if(is_long)
@@ -84,7 +148,7 @@ private:
          return(false);
 
       double atr_now=0,atr_prev=0;
-      if(!m_signals[idx].ReadATR(atr_now,atr_prev))
+      if(!ReadATR(idx,atr_now,atr_prev))
          return(false);
 
       return(atr_now<atr_prev);
@@ -122,8 +186,6 @@ public:
              const bool use_wpr,const bool use_atr,
              const int threshold,const ExitMode mode)
      {
-      m_symbols=symbols;
-      m_signals=signals;
       m_count=count;
       m_use_contraction=use_contraction;
       m_use_alignment=use_alignment;
@@ -131,6 +193,19 @@ public:
       m_use_atr=use_atr;
       m_threshold=threshold;
       m_mode=mode;
+
+      ArrayResize(m_symbols,m_count);
+      ArrayResize(m_alligator_handles,m_count);
+      ArrayResize(m_wpr_handles,m_count);
+      ArrayResize(m_atr_handles,m_count);
+
+      for(int i=0;i<m_count;i++)
+        {
+         m_symbols[i]=symbols[i];
+         m_alligator_handles[i]=signals[i].GetAlligatorHandle();
+         m_wpr_handles[i]=signals[i].GetWPRHandle();
+         m_atr_handles[i]=signals[i].GetATRHandle();
+        }
      }
 
    bool ShouldExitLong(string symbol)
