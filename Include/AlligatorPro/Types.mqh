@@ -7,6 +7,13 @@ enum TradeDirection
    DIR_SELL
   };
 
+enum ExitMode
+  {
+   EXIT_SIMPLE = 0,
+   EXIT_SCORE  = 1,
+   EXIT_STRICT = 2
+  };
+
 struct StrategySignal
   {
    string         symbol;

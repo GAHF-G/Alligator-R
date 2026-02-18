@@ -10,6 +10,7 @@
 #include "..\Include\AlligatorPro\TrailingManager.mqh"
 #include "..\Include\AlligatorPro\EquityProtection.mqh"
 #include "..\Include\AlligatorPro\Dashboard.mqh"
+#include "..\Include\AlligatorPro\ExitEngine.mqh"
 
 input group "Universe"
 input string InpSymbols="XAUUSD,BTCUSD";
@@ -36,6 +37,16 @@ input double InpTrailingATRMultiplier=1.2;
 input double InpSoftDD=8.0;
 input double InpHardDD=18.0;
 
+
+input group "Exit Engine"
+input bool InpUseContractionExit=true;
+input bool InpUseAlignmentExit=true;
+input bool InpUseWPRExit=true;
+input bool InpUseATRExit=false;
+input int InpExitScoreThreshold=2;
+input ExitMode InpExitMode=EXIT_SCORE;
+input int InpExitTimerSeconds=5;
+
 input group "Execution"
 input long InpMagic=56012026;
 input int InpMaxPositions=4;
@@ -49,6 +60,7 @@ RiskManager g_risk;
 TrailingManager g_trailing;
 EquityProtection g_equity;
 Dashboard g_dashboard;
+CExitEngine g_exit;
 datetime g_last_trade_time=0;
 
 string TrimText(string value)
@@ -78,15 +90,51 @@ int OnInit()
    g_risk.Init(InpRiskPercent);
    g_trailing.Init(InpMagic);
    g_equity.Init(InpSoftDD,InpHardDD);
+   g_exit.Init(g_symbols,g_signal,count,InpUseContractionExit,InpUseAlignmentExit,InpUseWPRExit,InpUseATRExit,InpExitScoreThreshold,InpExitMode);
+
+   if(InpExitTimerSeconds>0)
+      EventSetTimer(InpExitTimerSeconds);
+
    Logger::Info("EA","Initialization complete");
    return(INIT_SUCCEEDED);
   }
 
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
    for(int i=0;i<ArraySize(g_signal);i++)
       g_signal[i].Release();
    Comment("");
+  }
+
+
+void OnTimer()
+  {
+   for(int i=0;i<ArraySize(g_symbols);i++)
+     {
+      string symbol=g_symbols[i];
+      if(!PositionSelect(symbol))
+         continue;
+
+      if((long)PositionGetInteger(POSITION_MAGIC)!=InpMagic)
+         continue;
+
+      ENUM_POSITION_TYPE position_type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      bool should_close=false;
+
+      if(position_type==POSITION_TYPE_BUY)
+         should_close=g_exit.ShouldExitLong(symbol);
+      else if(position_type==POSITION_TYPE_SELL)
+         should_close=g_exit.ShouldExitShort(symbol);
+
+      if(!should_close)
+         continue;
+
+      if(g_trade.ClosePosition(symbol))
+         Logger::Info("ExitEngine",StringFormat("Exit signal executed for %s",symbol));
+      else
+         Logger::Warn("ExitEngine",StringFormat("Exit signal failed for %s",symbol));
+     }
   }
 
 void OnTick()

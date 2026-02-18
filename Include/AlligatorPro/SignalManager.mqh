@@ -209,6 +209,46 @@ public:
       return(sig);
      }
 
+
+   bool ReadAlligator(double &jaw_current,double &jaw_previous,
+                      double &teeth_current,double &teeth_previous,
+                      double &lips_current,double &lips_previous)
+     {
+      double jaw[2],teeth[2],lips[2];
+      if(CopyBuffer(m_alligator,0,1,2,jaw)<2 ||
+         CopyBuffer(m_alligator,1,1,2,teeth)<2 ||
+         CopyBuffer(m_alligator,2,1,2,lips)<2)
+         return(false);
+
+      jaw_current=jaw[0];
+      jaw_previous=jaw[1];
+      teeth_current=teeth[0];
+      teeth_previous=teeth[1];
+      lips_current=lips[0];
+      lips_previous=lips[1];
+      return(true);
+     }
+
+   bool ReadWPR(double &wpr_current,double &wpr_previous)
+     {
+      double wpr[2];
+      if(CopyBuffer(m_wpr,0,1,2,wpr)<2)
+         return(false);
+      wpr_current=wpr[0];
+      wpr_previous=wpr[1];
+      return(true);
+     }
+
+   bool ReadATR(double &atr_current,double &atr_previous)
+     {
+      double atr[2];
+      if(CopyBuffer(m_atr,0,1,2,atr)<2)
+         return(false);
+      atr_current=atr[0];
+      atr_previous=atr[1];
+      return(true);
+     }
+
    void Release()
      {
       if(m_alligator!=INVALID_HANDLE) IndicatorRelease(m_alligator);

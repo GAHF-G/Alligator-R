@@ -1,6 +1,7 @@
 #pragma once
 #include <Trade/Trade.mqh>
 #include "Types.mqh"
+#include "Logger.mqh"
 
 class TradeManager
   {
@@ -32,9 +33,35 @@ public:
      {
       if(!sig.valid || sig.direction==DIR_NONE || lots<=0)
          return(false);
+
+      bool sent=false;
       if(sig.direction==DIR_BUY)
-         return(m_trade.Buy(lots,sig.symbol,0.0,sig.stop_loss,sig.take_profit,"AlligatorPro BUY"));
-      return(m_trade.Sell(lots,sig.symbol,0.0,sig.stop_loss,sig.take_profit,"AlligatorPro SELL"));
+         sent=m_trade.Buy(lots,sig.symbol,0.0,sig.stop_loss,sig.take_profit,"AlligatorPro BUY");
+      else
+         sent=m_trade.Sell(lots,sig.symbol,0.0,sig.stop_loss,sig.take_profit,"AlligatorPro SELL");
+
+      if(!sent)
+         Logger::Warn("TradeManager",StringFormat("Send failed %s retcode=%d desc=%s",sig.symbol,m_trade.ResultRetcode(),m_trade.ResultRetcodeDescription()));
+
+      return(sent);
+     }
+
+   bool ClosePosition(const string symbol)
+     {
+      if(!PositionSelect(symbol))
+         return(false);
+
+      if(PositionGetInteger(POSITION_MAGIC)!=m_magic)
+         return(false);
+
+      if(!m_trade.PositionClose(symbol))
+        {
+         Logger::Warn("TradeManager",StringFormat("Close failed %s retcode=%d desc=%s",symbol,m_trade.ResultRetcode(),m_trade.ResultRetcodeDescription()));
+         return(false);
+        }
+
+      Logger::Info("TradeManager",StringFormat("Position closed %s",symbol));
+      return(true);
      }
 
    int CountOpenPositions()
