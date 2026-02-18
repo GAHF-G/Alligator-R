@@ -69,6 +69,9 @@ datetime g_last_trade_time=0;
 long g_signal_checks=0;
 long g_signal_valid=0;
 long g_block_counts[10];
+datetime g_last_perf_update=0;
+int g_perf_wins=0;
+int g_perf_losses=0;
 
 string BlockReasonToString(const BlockReason reason)
   {
@@ -120,6 +123,40 @@ string TrimText(string value)
    StringTrimLeft(value);
    StringTrimRight(value);
    return(value);
+  }
+
+void UpdatePerformanceStats()
+  {
+   datetime now=TimeCurrent();
+   if(g_last_perf_update!=0 && (now-g_last_perf_update)<60)
+      return;
+
+   g_perf_wins=0;
+   g_perf_losses=0;
+
+   if(!HistorySelect(0,now))
+      return;
+
+   int deals=HistoryDealsTotal();
+   for(int i=0;i<deals;i++)
+     {
+      ulong ticket=HistoryDealGetTicket(i);
+      if(ticket==0)
+         continue;
+
+      if((long)HistoryDealGetInteger(ticket,DEAL_MAGIC)!=InpMagic)
+         continue;
+      if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket,DEAL_ENTRY)!=DEAL_ENTRY_OUT)
+         continue;
+
+      double profit=HistoryDealGetDouble(ticket,DEAL_PROFIT)+HistoryDealGetDouble(ticket,DEAL_SWAP)+HistoryDealGetDouble(ticket,DEAL_COMMISSION);
+      if(profit>0.0)
+         g_perf_wins++;
+      else if(profit<0.0)
+         g_perf_losses++;
+     }
+
+   g_last_perf_update=now;
   }
 
 int OnInit()
@@ -203,7 +240,8 @@ void OnTick()
    bool trading_ok=g_equity.TradingAllowed();
    double drawdown=g_equity.CurrentDrawdownPct();
    double eq_scaler=g_equity.RiskScaler();
-   g_risk.UpdatePerformanceScaler(HistoryDealsTotal(),0);
+   UpdatePerformanceStats();
+   g_risk.UpdatePerformanceScaler(g_perf_wins,g_perf_losses);
    double eff_risk=g_risk.EffectiveRiskPct(eq_scaler);
 
    RuntimeState st;
@@ -252,13 +290,20 @@ void OnTick()
 
       g_signal_valid++;
 
+      int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      if(point<=0.0)
+        {
+         RegisterBlock(BLOCK_SIGNAL_MISC,symbol,"Invalid point size");
+         continue;
+        }
+
       double entry_raw=(signal.direction==DIR_BUY)?SymbolInfoDouble(symbol,SYMBOL_ASK):SymbolInfoDouble(symbol,SYMBOL_BID);
-      double entry=NormalizeDouble(entry_raw,2);
-      signal.stop_loss=NormalizeDouble(signal.stop_loss,2);
-      signal.take_profit=NormalizeDouble(signal.take_profit,2);
-      double sl_points=NormalizeDouble(MathAbs(entry-signal.stop_loss)/SymbolInfoDouble(symbol,SYMBOL_POINT),2);
+      double entry=NormalizeDouble(entry_raw,digits);
+      signal.stop_loss=NormalizeDouble(signal.stop_loss,digits);
+      signal.take_profit=NormalizeDouble(signal.take_profit,digits);
+      double sl_points=MathAbs(entry-signal.stop_loss)/point;
       double lots=g_risk.ComputeLots(symbol,eff_risk,sl_points);
-      lots=NormalizeDouble(lots,2);
       if(lots<=0.0)
         {
          RegisterBlock(BLOCK_MARGIN,symbol,"Lot computation <= 0");
