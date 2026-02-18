@@ -52,6 +52,10 @@ input long InpMagic=56012026;
 input int InpMaxPositions=4;
 input int InpDeviationPoints=10;
 input int InpMinSecondsBetweenTrades=120;
+input int InpMaxSpreadPoints=0; // 0=disabled
+
+input group "Diagnostics"
+input bool InpDebugMode=false;
 
 string g_symbols[];
 SignalManager g_signal[];
@@ -62,6 +66,54 @@ EquityProtection g_equity;
 Dashboard g_dashboard;
 CExitEngine g_exit;
 datetime g_last_trade_time=0;
+long g_signal_checks=0;
+long g_signal_valid=0;
+long g_block_counts[10];
+
+string BlockReasonToString(const BlockReason reason)
+  {
+   switch(reason)
+     {
+      case BLOCK_SPREAD: return("BLOCK_SPREAD");
+      case BLOCK_VOLATILITY: return("BLOCK_VOLATILITY");
+      case BLOCK_ALIGNMENT: return("BLOCK_ALIGNMENT");
+      case BLOCK_WPR: return("BLOCK_WPR");
+      case BLOCK_DD: return("BLOCK_DD");
+      case BLOCK_SESSION: return("BLOCK_SESSION");
+      case BLOCK_MARGIN: return("BLOCK_MARGIN");
+      case BLOCK_FRACTAL: return("BLOCK_FRACTAL");
+      case BLOCK_SIGNAL_MISC: return("BLOCK_SIGNAL_MISC");
+      default: return("BLOCK_NONE");
+     }
+  }
+
+BlockReason DetectBlockReason(const string reason)
+  {
+   if(StringFind(reason,"Volatility",0)>=0 || StringFind(reason,"dormancy",0)>=0)
+      return(BLOCK_VOLATILITY);
+   if(StringFind(reason,"fractal",0)>=0 || StringFind(reason,"Fractal",0)>=0)
+      return(BLOCK_FRACTAL);
+   if(StringFind(reason,"WPR",0)>=0)
+      return(BLOCK_WPR);
+   if(StringFind(reason,"align",0)>=0)
+      return(BLOCK_ALIGNMENT);
+   if(StringFind(reason,"margin",0)>=0)
+      return(BLOCK_MARGIN);
+   if(StringFind(reason,"drawdown",0)>=0 || StringFind(reason,"Trading disabled",0)>=0)
+      return(BLOCK_DD);
+   return(BLOCK_SIGNAL_MISC);
+  }
+
+void RegisterBlock(const BlockReason reason,const string symbol,const string details)
+  {
+   int idx=(int)reason;
+   if(idx>=0 && idx<ArraySize(g_block_counts))
+      g_block_counts[idx]++;
+
+   if(InpDebugMode)
+      Logger::Info("BlockStats",StringFormat("%s %s - %s",symbol,BlockReasonToString(reason),details));
+  }
+
 
 string TrimText(string value)
   {
@@ -72,6 +124,7 @@ string TrimText(string value)
 
 int OnInit()
   {
+   ArrayInitialize(g_block_counts,0);
    int count=StringSplit(InpSymbols,',',g_symbols);
    if(count<=0)
       return(INIT_PARAMETERS_INCORRECT);
@@ -102,6 +155,12 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    EventKillTimer();
+   Logger::Info("Stats",StringFormat("Signal stats checks=%I64d valid=%I64d",g_signal_checks,g_signal_valid));
+   for(int i=0;i<ArraySize(g_block_counts);i++)
+     {
+      if(g_block_counts[i]>0)
+         Logger::Info("Stats",StringFormat("%s=%I64d",BlockReasonToString((BlockReason)i),g_block_counts[i]));
+     }
    for(int i=0;i<ArraySize(g_signal);i++)
       g_signal[i].Release();
    Comment("");
@@ -157,7 +216,10 @@ void OnTick()
    g_dashboard.Render(st);
 
    if(!trading_ok)
+     {
+      RegisterBlock(BLOCK_DD,"*","Trading disabled by equity protection");
       return;
+     }
    if(st.open_positions>=InpMaxPositions)
       return;
    if((TimeCurrent()-g_last_trade_time)<InpMinSecondsBetweenTrades)
@@ -169,9 +231,26 @@ void OnTick()
       if(g_trade.HasOpenPosition(symbol))
          continue;
 
+      g_signal_checks++;
+
+      if(InpMaxSpreadPoints>0)
+        {
+         double spread_points=(SymbolInfoDouble(symbol,SYMBOL_ASK)-SymbolInfoDouble(symbol,SYMBOL_BID))/SymbolInfoDouble(symbol,SYMBOL_POINT);
+         if(spread_points>InpMaxSpreadPoints)
+           {
+            RegisterBlock(BLOCK_SPREAD,symbol,StringFormat("Spread too high %.1f > %d",spread_points,InpMaxSpreadPoints));
+            continue;
+           }
+        }
+
       StrategySignal signal=g_signal[i].Evaluate(symbol,InpUseFractalFilter,InpATRSLMultiplier,InpRR,InpFractalRangePoints);
       if(!signal.valid)
+        {
+         RegisterBlock(DetectBlockReason(signal.reason),symbol,signal.reason);
          continue;
+        }
+
+      g_signal_valid++;
 
       double entry_raw=(signal.direction==DIR_BUY)?SymbolInfoDouble(symbol,SYMBOL_ASK):SymbolInfoDouble(symbol,SYMBOL_BID);
       double entry=NormalizeDouble(entry_raw,2);
@@ -181,7 +260,10 @@ void OnTick()
       double lots=g_risk.ComputeLots(symbol,eff_risk,sl_points);
       lots=NormalizeDouble(lots,2);
       if(lots<=0.0)
+        {
+         RegisterBlock(BLOCK_MARGIN,symbol,"Lot computation <= 0");
          continue;
+        }
 
       if(g_trade.ExecuteSignal(signal,lots))
         {
@@ -189,6 +271,9 @@ void OnTick()
          Logger::Info("TradeManager",StringFormat("Order sent %s lots=%.2f",symbol,lots));
         }
       else
+        {
+         RegisterBlock(BLOCK_SIGNAL_MISC,symbol,"Order rejected by trade manager");
          Logger::Warn("TradeManager",StringFormat("Order rejected %s",symbol));
+        }
      }
   }

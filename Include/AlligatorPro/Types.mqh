@@ -14,6 +14,20 @@ enum ExitMode
    EXIT_STRICT = 2
   };
 
+enum BlockReason
+  {
+   BLOCK_NONE = 0,
+   BLOCK_SPREAD,
+   BLOCK_VOLATILITY,
+   BLOCK_ALIGNMENT,
+   BLOCK_WPR,
+   BLOCK_DD,
+   BLOCK_SESSION,
+   BLOCK_MARGIN,
+   BLOCK_FRACTAL,
+   BLOCK_SIGNAL_MISC
+  };
+
 struct StrategySignal
   {
    string         symbol;
